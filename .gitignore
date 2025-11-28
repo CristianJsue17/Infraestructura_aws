@@ -1,0 +1,58 @@
+# Terraform
+*.tfstate
+*.tfstate.*
+*.tfstate.backup
+.terraform/
+.terraform.lock.hcl
+terraform.tfvars
+*.tfvars
+!terraform.tfvars.example
+crash.log
+crash.*.log
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+
+# Kubernetes Secrets
+k8s/**/secrets.yaml
+!k8s/**/secrets.yaml.example
+
+# SSH Keys
+*.pem
+*.key
+*.pub
+*.ppk
+
+# Environment
+.env
+.env.local
+.env.*.local
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+.directory
+
+# Logs
+*.log
+logs/
+
+# Backup files
+*.bak
+*.backup
+*~
+
+# AWS
+.aws/
+credentials
+config
