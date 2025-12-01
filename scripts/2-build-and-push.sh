@@ -1,3 +1,4 @@
+#2-build-and-push.sh
 #!/bin/bash
 
 # Script para CLONAR de GitHub, construir y subir imágenes Docker a ECR

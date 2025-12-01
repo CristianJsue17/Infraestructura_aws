@@ -1,6 +1,21 @@
 # ====================================
-# API GATEWAY + WAF (RATE LIMITING)
+# API GATEWAY REST API + VPC LINK + WAF
 # ====================================
+
+# ====================================
+# VPC LINK - Conectar API Gateway con NLB
+# ====================================
+
+resource "aws_api_gateway_vpc_link" "main" {
+  name        = "${var.project_name}-vpc-link"
+  description = "VPC Link para conectar API Gateway con NLB interno"
+  target_arns = [aws_lb.nlb.arn]
+
+  tags = {
+    Name        = "${var.project_name}-vpc-link"
+    Environment = var.environment
+  }
+}
 
 # ====================================
 # API GATEWAY REST API
@@ -8,7 +23,7 @@
 
 resource "aws_api_gateway_rest_api" "main" {
   name        = "${var.project_name}-api"
-  description = "API Gateway para microservicios con rate limiting"
+  description = "API Gateway para microservicios con rate limiting y API Key"
 
   endpoint_configuration {
     types = ["REGIONAL"]
@@ -66,7 +81,7 @@ resource "aws_api_gateway_usage_plan_key" "main" {
 }
 
 # ====================================
-# RESOURCES Y METODOS
+# RESOURCES - API GATEWAY
 # ====================================
 
 # Resource: /api
@@ -90,32 +105,11 @@ resource "aws_api_gateway_resource" "auth_proxy" {
   path_part   = "{proxy+}"
 }
 
-# Method: ANY /api/auth/{proxy+}
-resource "aws_api_gateway_method" "auth_proxy" {
-  rest_api_id      = aws_api_gateway_rest_api.main.id
-  resource_id      = aws_api_gateway_resource.auth_proxy.id
-  http_method      = "ANY"
-  authorization    = "NONE"
-  api_key_required = true
-
-  request_parameters = {
-    "method.request.path.proxy" = true
-  }
-}
-
-# Integration: /api/auth/{proxy+} - Conexion directa al ALB
-resource "aws_api_gateway_integration" "auth_proxy" {
+# Resource: /api/auth/verificar (ESPECÍFICO - tiene prioridad sobre {proxy+})
+resource "aws_api_gateway_resource" "auth_verificar" {
   rest_api_id = aws_api_gateway_rest_api.main.id
-  resource_id = aws_api_gateway_resource.auth_proxy.id
-  http_method = aws_api_gateway_method.auth_proxy.http_method
-
-  type                    = "HTTP_PROXY"
-  integration_http_method = "ANY"
-  uri                     = "http://${aws_lb.internal.dns_name}/api/auth/{proxy}"
-
-  request_parameters = {
-    "integration.request.path.proxy" = "method.request.path.proxy"
-  }
+  parent_id   = aws_api_gateway_resource.auth.id
+  path_part   = "verificar"
 }
 
 # Resource: /api/productos
@@ -132,6 +126,106 @@ resource "aws_api_gateway_resource" "productos_proxy" {
   path_part   = "{proxy+}"
 }
 
+# ====================================
+# METHODS - AUTENTICACIÓN
+# ====================================
+
+# Method: ANY /api/auth/{proxy+}
+resource "aws_api_gateway_method" "auth_proxy" {
+  rest_api_id      = aws_api_gateway_rest_api.main.id
+  resource_id      = aws_api_gateway_resource.auth_proxy.id
+  http_method      = "ANY"
+  authorization    = "NONE"
+  api_key_required = true
+
+  request_parameters = {
+    "method.request.path.proxy"           = true
+    "method.request.header.Authorization" = false
+  }
+}
+
+# Integration: /api/auth/{proxy+}
+resource "aws_api_gateway_integration" "auth_proxy" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_proxy.id
+  http_method = aws_api_gateway_method.auth_proxy.http_method
+
+  type                    = "HTTP_PROXY"
+  integration_http_method = "POST"
+  uri                     = "http://${aws_lb.nlb.dns_name}:8000/api/auth/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.main.id
+  
+  passthrough_behavior = "WHEN_NO_MATCH"
+  
+  request_parameters = {
+    "integration.request.path.proxy" = "method.request.path.proxy"
+  }
+}
+
+# ====================================
+# METHOD GET - /api/auth/verificar
+# ====================================
+
+# Method: GET /api/auth/verificar
+resource "aws_api_gateway_method" "auth_verificar_get" {
+  rest_api_id      = aws_api_gateway_rest_api.main.id
+  resource_id      = aws_api_gateway_resource.auth_verificar.id
+  http_method      = "GET"
+  authorization    = "NONE"
+  api_key_required = true
+  
+  request_parameters = {
+    "method.request.header.Authorization" = true
+  }
+}
+
+# Integration: GET /api/auth/verificar -> NLB:8000
+resource "aws_api_gateway_integration" "auth_verificar_get" {
+  rest_api_id             = aws_api_gateway_rest_api.main.id
+  resource_id             = aws_api_gateway_resource.auth_verificar.id
+  http_method             = aws_api_gateway_method.auth_verificar_get.http_method
+  type                    = "HTTP_PROXY"
+  integration_http_method = "GET"
+  uri                     = "http://${aws_lb.nlb.dns_name}:8000/api/auth/verificar"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.main.id
+
+  request_parameters = {
+    "integration.request.header.Authorization" = "method.request.header.Authorization"
+  }
+}
+
+# Response: 200 OK
+resource "aws_api_gateway_method_response" "auth_verificar_get_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_verificar.id
+  http_method = aws_api_gateway_method.auth_verificar_get.http_method
+  status_code = "200"
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = true
+  }
+}
+
+# Integration Response: 200 OK
+resource "aws_api_gateway_integration_response" "auth_verificar_get_200" {
+  rest_api_id = aws_api_gateway_rest_api.main.id
+  resource_id = aws_api_gateway_resource.auth_verificar.id
+  http_method = aws_api_gateway_method.auth_verificar_get.http_method
+  status_code = aws_api_gateway_method_response.auth_verificar_get_200.status_code
+
+  response_parameters = {
+    "method.response.header.Access-Control-Allow-Origin" = "'*'"
+  }
+
+  depends_on = [aws_api_gateway_integration.auth_verificar_get]
+}
+
+# ====================================
+# METHODS - PRODUCTOS
+# ====================================
+
 # Method: ANY /api/productos/{proxy+}
 resource "aws_api_gateway_method" "productos_proxy" {
   rest_api_id      = aws_api_gateway_rest_api.main.id
@@ -141,23 +235,30 @@ resource "aws_api_gateway_method" "productos_proxy" {
   api_key_required = true
 
   request_parameters = {
-    "method.request.path.proxy" = true
+    "method.request.path.proxy"           = true
+    "method.request.header.Authorization" = false
   }
 }
 
-# Integration: /api/productos/{proxy+} - Conexion directa al ALB
+# Integration: /api/productos/{proxy+}
 resource "aws_api_gateway_integration" "productos_proxy" {
   rest_api_id = aws_api_gateway_rest_api.main.id
   resource_id = aws_api_gateway_resource.productos_proxy.id
   http_method = aws_api_gateway_method.productos_proxy.http_method
 
   type                    = "HTTP_PROXY"
-  integration_http_method = "ANY"
-  uri                     = "http://${aws_lb.internal.dns_name}/api/productos/{proxy}"
-
+  integration_http_method = "POST"
+  uri                     = "http://${aws_lb.nlb.dns_name}:8080/api/productos/{proxy}"
+  connection_type         = "VPC_LINK"
+  connection_id           = aws_api_gateway_vpc_link.main.id
+  
+  passthrough_behavior = "WHEN_NO_MATCH"
+  
   request_parameters = {
     "integration.request.path.proxy" = "method.request.path.proxy"
   }
+
+  depends_on = [aws_api_gateway_vpc_link.main]
 }
 
 # ====================================
@@ -168,12 +269,20 @@ resource "aws_api_gateway_deployment" "main" {
   rest_api_id = aws_api_gateway_rest_api.main.id
 
   triggers = {
+    # ⚠️ IMPORTANTE: Incluir TODOS los recursos para forzar redeploy cuando cambien
     redeployment = sha1(jsonencode([
+      # Recursos base
       aws_api_gateway_resource.api.id,
       aws_api_gateway_resource.auth.id,
       aws_api_gateway_resource.auth_proxy.id,
+      # Métodos de autenticación (proxy)
       aws_api_gateway_method.auth_proxy.id,
       aws_api_gateway_integration.auth_proxy.id,
+      # Recurso específico: /verificar
+      aws_api_gateway_resource.auth_verificar.id,
+      aws_api_gateway_method.auth_verificar_get.id,
+      aws_api_gateway_integration.auth_verificar_get.id,
+      # Recursos de productos
       aws_api_gateway_resource.productos.id,
       aws_api_gateway_resource.productos_proxy.id,
       aws_api_gateway_method.productos_proxy.id,
@@ -187,7 +296,9 @@ resource "aws_api_gateway_deployment" "main" {
 
   depends_on = [
     aws_api_gateway_integration.auth_proxy,
-    aws_api_gateway_integration.productos_proxy
+    aws_api_gateway_integration.auth_verificar_get,
+    aws_api_gateway_integration.productos_proxy,
+    aws_api_gateway_vpc_link.main
   ]
 }
 
@@ -216,6 +327,10 @@ resource "aws_api_gateway_stage" "main" {
   }
 }
 
+# ====================================
+# CLOUDWATCH LOGS - API GATEWAY
+# ====================================
+
 resource "aws_cloudwatch_log_group" "api_gateway" {
   name              = "/aws/apigateway/${var.project_name}"
   retention_in_days = 7
@@ -239,6 +354,41 @@ resource "aws_api_gateway_method_settings" "all" {
 }
 
 # ====================================
+# IAM ROLE - API GATEWAY CLOUDWATCH
+# ====================================
+
+resource "aws_iam_role" "api_gateway_cloudwatch" {
+  name = "${var.project_name}-api-gateway-cloudwatch-role"
+
+  assume_role_policy = jsonencode({
+    Version = "2012-10-17"
+    Statement = [
+      {
+        Action = "sts:AssumeRole"
+        Effect = "Allow"
+        Principal = {
+          Service = "apigateway.amazonaws.com"
+        }
+      }
+    ]
+  })
+
+  tags = {
+    Name        = "${var.project_name}-api-gateway-cloudwatch-role"
+    Environment = var.environment
+  }
+}
+
+resource "aws_iam_role_policy_attachment" "api_gateway_cloudwatch" {
+  role       = aws_iam_role.api_gateway_cloudwatch.name
+  policy_arn = "arn:aws:iam::aws:policy/service-role/AmazonAPIGatewayPushToCloudWatchLogs"
+}
+
+resource "aws_api_gateway_account" "main" {
+  cloudwatch_role_arn = aws_iam_role.api_gateway_cloudwatch.arn
+}
+
+# ====================================
 # WAF - WEB APPLICATION FIREWALL
 # Rate Limiting: 10 requests por segundo por IP
 # ====================================
@@ -251,7 +401,7 @@ resource "aws_wafv2_web_acl" "api_gateway" {
     allow {}
   }
 
-  # Rule 1: Rate Limiting por IP
+  # Rule: Rate Limiting por IP
   rule {
     name     = "RateLimitPerIP"
     priority = 1

@@ -1,11 +1,140 @@
 # ====================================
-# RDS - POSTGRESQL DATABASES
+# RDS - POSTGRESQL DATABASES (CORREGIDO v2)
 # ====================================
 
-# Subnet Group para RDS
+# ====================================
+# SECURITY GROUP - RDS AUTENTICACIÓN
+# ====================================
+
+resource "aws_security_group" "rds_autenticacion" {
+  name_prefix = "${var.project_name}-rds-auth-"
+  description = "Security group for RDS autenticacion database"
+  vpc_id      = module.vpc.vpc_id
+
+  # ✅ CRÍTICO: Permitir desde el Cluster Security Group (creado automáticamente por EKS)
+  ingress {
+    description     = "PostgreSQL from EKS Cluster SG (auto-created)"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
+  }
+
+  # ✅ También permitir desde el SG de nodos (por si acaso)
+  ingress {
+    description     = "PostgreSQL from EKS nodes SG"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  # ✅ Permitir conexiones desde Bastion para debugging
+  ingress {
+    description     = "PostgreSQL from Bastion"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  # ✅ Permitir desde toda la VPC (fallback)
+  ingress {
+    description = "PostgreSQL from VPC"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-rds-autenticacion-sg"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ====================================
+# SECURITY GROUP - RDS PRODUCTOS
+# ====================================
+
+resource "aws_security_group" "rds_productos" {
+  name_prefix = "${var.project_name}-rds-prod-"
+  description = "Security group for RDS productos database"
+  vpc_id      = module.vpc.vpc_id
+
+  # ✅ CRÍTICO: Permitir desde el Cluster Security Group (creado automáticamente por EKS)
+  ingress {
+    description     = "PostgreSQL from EKS Cluster SG (auto-created)"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_eks_cluster.main.vpc_config[0].cluster_security_group_id]
+  }
+
+  # ✅ También permitir desde el SG de nodos (por si acaso)
+  ingress {
+    description     = "PostgreSQL from EKS nodes SG"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.eks_nodes.id]
+  }
+
+  # ✅ Permitir conexiones desde Bastion para debugging
+  ingress {
+    description     = "PostgreSQL from Bastion"
+    from_port       = 5432
+    to_port         = 5432
+    protocol        = "tcp"
+    security_groups = [aws_security_group.bastion.id]
+  }
+
+  # ✅ Permitir desde toda la VPC (fallback)
+  ingress {
+    description = "PostgreSQL from VPC"
+    from_port   = 5432
+    to_port     = 5432
+    protocol    = "tcp"
+    cidr_blocks = [var.vpc_cidr]
+  }
+
+  egress {
+    description = "Allow all outbound"
+    from_port   = 0
+    to_port     = 0
+    protocol    = "-1"
+    cidr_blocks = ["0.0.0.0/0"]
+  }
+
+  tags = {
+    Name        = "${var.project_name}-rds-productos-sg"
+    Environment = var.environment
+  }
+
+  lifecycle {
+    create_before_destroy = true
+  }
+}
+
+# ====================================
+# DB SUBNET GROUP - USAR SUBNETS PRIVADAS
+# ====================================
+
 resource "aws_db_subnet_group" "main" {
   name       = "${var.project_name}-db-subnet-group"
-  subnet_ids = module.vpc.database_subnets
+  subnet_ids = module.vpc.private_subnets
 
   tags = {
     Name        = "${var.project_name}-db-subnet-group"
@@ -13,7 +142,10 @@ resource "aws_db_subnet_group" "main" {
   }
 }
 
-# Parameter Group para PostgreSQL 15
+# ====================================
+# DB PARAMETER GROUP
+# ====================================
+
 resource "aws_db_parameter_group" "postgres15" {
   name   = "${var.project_name}-postgres15-params"
   family = "postgres15"
@@ -39,7 +171,10 @@ resource "aws_db_parameter_group" "postgres15" {
   }
 }
 
-# RDS Instance para Autenticación
+# ====================================
+# RDS INSTANCE - AUTENTICACIÓN
+# ====================================
+
 resource "aws_db_instance" "autenticacion" {
   identifier     = "${var.project_name}-autenticacion-db"
   engine         = "postgres"
@@ -67,10 +202,10 @@ resource "aws_db_instance" "autenticacion" {
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   # High Availability
-  multi_az            = false # Cambiar a true para producción
-  publicly_accessible = false
-  deletion_protection = false # Cambiar a true para producción
-  skip_final_snapshot = true  # Cambiar a false para producción
+  multi_az               = false
+  publicly_accessible    = false
+  deletion_protection    = false
+  skip_final_snapshot    = true
   final_snapshot_identifier = "${var.project_name}-autenticacion-final-snapshot"
 
   # Performance Insights
@@ -85,9 +220,14 @@ resource "aws_db_instance" "autenticacion" {
     Environment  = var.environment
     Microservice = "autenticacion"
   }
+  
+  depends_on = [aws_eks_cluster.main]
 }
 
-# RDS Instance para Productos
+# ====================================
+# RDS INSTANCE - PRODUCTOS
+# ====================================
+
 resource "aws_db_instance" "productos" {
   identifier     = "${var.project_name}-productos-db"
   engine         = "postgres"
@@ -115,10 +255,10 @@ resource "aws_db_instance" "productos" {
   enabled_cloudwatch_logs_exports = ["postgresql", "upgrade"]
 
   # High Availability
-  multi_az            = false # Cambiar a true para producción
-  publicly_accessible = false
-  deletion_protection = false # Cambiar a true para producción
-  skip_final_snapshot = true  # Cambiar a false para producción
+  multi_az               = false
+  publicly_accessible    = false
+  deletion_protection    = false
+  skip_final_snapshot    = true
   final_snapshot_identifier = "${var.project_name}-productos-final-snapshot"
 
   # Performance Insights
@@ -133,6 +273,8 @@ resource "aws_db_instance" "productos" {
     Environment  = var.environment
     Microservice = "productos"
   }
+  
+  depends_on = [aws_eks_cluster.main]
 }
 
 # ====================================
@@ -141,9 +283,9 @@ resource "aws_db_instance" "productos" {
 
 # Secret para RDS Autenticación
 resource "aws_secretsmanager_secret" "rds_autenticacion" {
-  name        = "${var.project_name}-rds-autenticacion-creds-v2"  # ✅ Agregar -v2
-  description = "Credenciales para RDS de autenticación"
-  recovery_window_in_days = 0  # ✅ Agregar esta línea
+  name                    = "${var.project_name}-rds-autenticacion-creds"
+  description             = "Credenciales para RDS de autenticación"
+  recovery_window_in_days = 0
 
   tags = {
     Name        = "${var.project_name}-rds-autenticacion-secret"
@@ -166,9 +308,9 @@ resource "aws_secretsmanager_secret_version" "rds_autenticacion" {
 
 # Secret para RDS Productos
 resource "aws_secretsmanager_secret" "rds_productos" {
-  name        = "${var.project_name}-rds-productos-creds-v2"  # ✅ Agregar -v2
-  description = "Credenciales para RDS de productos"
-  recovery_window_in_days = 0  # ✅ Agregar esta línea
+  name                    = "${var.project_name}-rds-productos-creds"
+  description             = "Credenciales para RDS de productos"
+  recovery_window_in_days = 0
 
   tags = {
     Name        = "${var.project_name}-rds-productos-secret"
@@ -191,9 +333,9 @@ resource "aws_secretsmanager_secret_version" "rds_productos" {
 
 # Secret para JWT
 resource "aws_secretsmanager_secret" "jwt" {
-  name        = "${var.project_name}-jwt-secret-v2"  # ✅ Agregar -v2
-  description = "JWT secret key para ambos microservicios"
-  recovery_window_in_days = 0  # ✅ Agregar esta línea
+  name                    = "${var.project_name}-jwt-secret"
+  description             = "JWT secret key para ambos microservicios"
+  recovery_window_in_days = 0
 
   tags = {
     Name        = "${var.project_name}-jwt-secret"

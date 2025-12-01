@@ -37,49 +37,107 @@ variable "availability_zones" {
 }
 
 # ====================================
-# ECS CONFIGURATION
+# EKS CONFIGURATION
 # ====================================
 
-variable "ecs_autenticacion_cpu" {
-  description = "CPU units para el task de autenticación (1024 = 1 vCPU)"
-  type        = number
-  default     = 512
+variable "eks_cluster_version" {
+  description = "Versión de Kubernetes para EKS"
+  type        = string
+  default     = "1.28"
 }
 
-variable "ecs_autenticacion_memory" {
-  description = "Memoria en MB para el task de autenticación"
-  type        = number
-  default     = 1024
+variable "eks_node_instance_type" {
+  description = "Tipo de instancia para los nodos de EKS"
+  type        = string
+  default     = "t3.medium"
 }
 
-variable "ecs_productos_cpu" {
-  description = "CPU units para el task de productos (1024 = 1 vCPU)"
-  type        = number
-  default     = 1024
-}
-
-variable "ecs_productos_memory" {
-  description = "Memoria en MB para el task de productos"
-  type        = number
-  default     = 2048
-}
-
-variable "service_desired_count" {
-  description = "Número deseado de tasks por servicio"
+variable "eks_node_desired_size" {
+  description = "Número deseado de nodos en el cluster"
   type        = number
   default     = 3
 }
 
-variable "service_min_count" {
-  description = "Número mínimo de tasks por servicio"
+variable "eks_node_min_size" {
+  description = "Número mínimo de nodos en el cluster"
   type        = number
   default     = 3
 }
 
-variable "service_max_count" {
-  description = "Número máximo de tasks por servicio"
+variable "eks_node_max_size" {
+  description = "Número máximo de nodos en el cluster"
   type        = number
   default     = 10
+}
+
+variable "eks_node_disk_size" {
+  description = "Tamaño del disco en GB para los nodos"
+  type        = number
+  default     = 30
+}
+
+# ====================================
+# KUBERNETES PODS CONFIGURATION
+# ====================================
+
+variable "autenticacion_replicas" {
+  description = "Número de réplicas para el servicio de autenticación"
+  type        = number
+  default     = 3
+}
+
+variable "productos_replicas" {
+  description = "Número de réplicas para el servicio de productos"
+  type        = number
+  default     = 3
+}
+
+variable "autenticacion_cpu_request" {
+  description = "CPU request para pods de autenticación (milicores)"
+  type        = string
+  default     = "250m"
+}
+
+variable "autenticacion_memory_request" {
+  description = "Memory request para pods de autenticación"
+  type        = string
+  default     = "512Mi"
+}
+
+variable "autenticacion_cpu_limit" {
+  description = "CPU limit para pods de autenticación (milicores)"
+  type        = string
+  default     = "500m"
+}
+
+variable "autenticacion_memory_limit" {
+  description = "Memory limit para pods de autenticación"
+  type        = string
+  default     = "1Gi"
+}
+
+variable "productos_cpu_request" {
+  description = "CPU request para pods de productos (milicores)"
+  type        = string
+  default     = "500m"
+}
+
+variable "productos_memory_request" {
+  description = "Memory request para pods de productos"
+  type        = string
+  default     = "1Gi"
+}
+
+variable "productos_cpu_limit" {
+  description = "CPU limit para pods de productos (milicores)"
+  type        = string
+  default     = "1000m"
+}
+
+variable "productos_memory_limit" {
+  description = "Memory limit para pods de productos"
+  type        = string
+  default     = "2Gi"
 }
 
 # ====================================
@@ -101,13 +159,13 @@ variable "db_allocated_storage" {
 variable "db_engine_version" {
   description = "Versión de PostgreSQL"
   type        = string
-  default     = "15.4"
+  default     = "15"
 }
 
 variable "db_username" {
   description = "Usuario master para las bases de datos"
   type        = string
-  default     = "admin"
+  default     = "dbadmin"
   sensitive   = true
 }
 
@@ -185,25 +243,27 @@ variable "bastion_key_name" {
 variable "allowed_ssh_cidr" {
   description = "CIDR blocks permitidos para SSH al bastion"
   type        = list(string)
-  default     = ["0.0.0.0/0"] # CAMBIAR por tu IP en producción
+  default     = ["0.0.0.0/0"]
 }
 
 # ====================================
-# GITHUB REPOSITORIES
+# ECR REPOSITORIES
 # ====================================
 
-variable "github_repo_autenticacion" {
-  description = "URL del repositorio de GitHub para autenticación"
+variable "ecr_autenticacion_name" {
+  description = "Nombre del repositorio ECR para autenticación"
   type        = string
+  default     = "microservicios/autenticacion"
 }
 
-variable "github_repo_productos" {
-  description = "URL del repositorio de GitHub para productos"
+variable "ecr_productos_name" {
+  description = "Nombre del repositorio ECR para productos"
   type        = string
+  default     = "microservicios/productos"
 }
 
 # ====================================
-# TAGS
+# TAGS ADICIONALES
 # ====================================
 
 variable "additional_tags" {
